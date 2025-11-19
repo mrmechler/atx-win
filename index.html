@@ -96,14 +96,17 @@
     }
 
     #scratchCanvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      display: block;
-      cursor: grab;
-      touch-action: none;
-    }
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+  /* Make the canvas opaque so you never see the content before JS draws */
+  background: linear-gradient(145deg, #14532d, #052e16);
+}
+
 
     /* FALLING KEYS */
     .falling-key {
