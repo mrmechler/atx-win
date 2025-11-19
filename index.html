@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ATXWIN • New Price Scratch-Off</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: #000 url("background.png") center/cover no-repeat fixed;
+      color: #f9fafb;
+    }
+
+    /* INVISIBLE WRAPPER — NO SEMI-TRANSPARENT BACKGROUND */
+    .page {
+      width: 100%;
+      max-width: 440px;
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border-radius: 0;
+    }
+
+    /* SCRATCH CARD AREA */
+    .scratch-card {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 18px 35px rgba(0,0,0,0.7);
+
+      /* REVEALED BACKGROUND COLOR */
+      background: #111827;
+
+      border: 2px solid rgba(250, 204, 21, 0.7);
+
+      /* MOVED DOWN AS REQUESTED */
+      margin: 230px auto 0;
+    }
+
+    .scratch-content {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      text-align: center;
+      padding: 8px;
+      gap: 6px;
+    }
+
+    .label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: #fef9c3;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+    }
+
+    .price {
+      font-size: clamp(1.9rem, 6vw, 2.5rem);
+      font-weight: 900;
+      color: #facc15;
+      text-shadow:
+        0 0 4px rgba(0,0,0,0.8),
+        0 3px 6px rgba(0,0,0,0.9);
+    }
+
+    /* CASH STACK IMAGE */
+    .cash-stack {
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cash-stack img {
+      width: 100px;
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 3px 4px rgba(0,0,0,0.6));
+    }
+
+    #scratchCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    /* FALLING KEYS */
+    .falling-key {
+      position: fixed;
+      top: -120px;
+      width: 70px;
+      height: auto;
+      pointer-events: none;
+      z-index: 9999;
+      animation-name: keyFall;
+      animation-timing-function: linear;
+      animation-iteration-count: 1;
+      opacity: 1;
+    }
+
+    @keyframes keyFall {
+      0% {
+        transform: translate3d(0, -20vh, 0) rotate(var(--start-rot));
+        opacity: 1;
+      }
+      100% {
+        transform: translate3d(0, 130vh, 0) rotate(var(--end-rot));
+        opacity: 1;
+      }
+    }
+
+    /* CLAIM BUTTON */
+    .claim-container {
+      margin-top: 18px;
+      text-align: center;
+    }
+
+    .claim-button {
+      padding: 10px 26px;
+      border-radius: 999px;
+      border: none;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      background: #facc15;   
+      color: #111827;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      transition: filter 0.2s ease, opacity 0.2s ease,
+                  transform 0.1s ease;
+      display: inline-block;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(6px);
+      letter-spacing: 0.08em;
+    }
+
+    .claim-button.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .claim-button:hover {
+      filter: brightness(1.05);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+
+    <!-- SCRATCH CARD -->
+    <div class="scratch-card">
+      <div class="scratch-content">
+        <div class="label">NEW PRICE</div>
+        <div class="price">$849,000!</div>
+
+        <div class="cash-stack">
+          <img src="cash.png" alt="Cash stack" />
+        </div>
+      </div>
+
+      <canvas id="scratchCanvas"></canvas>
+    </div>
+
+    <!-- CLAIM BUTTON -->
+    <div class="claim-container">
+      <button id="claimButton" class="claim-button">
+        CLAIM
+      </button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const canvas = document.getElementById("scratchCanvas");
+      const ctx = canvas.getContext("2d");
+      const card = document.querySelector(".scratch-card");
+      const claimButton = document.getElementById("claimButton");
+
+      let isDrawing = false;
+      const brushRadius = 28;
+      let keysFallen = false;
+      let claimActivated = false;
+      let scratchSampleCount = 0;
+
+      function resizeCanvas() {
+        const rect = card.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+
+        canvas.width = rect.width * ratio;
+        canvas.height = rect.height * ratio;
+        canvas.style.width = rect.width + "px";
+        canvas.style.height = rect.height + "px";
+
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        drawKeyFoil();
+      }
+
+      function drawKeyFoil() {
+        const rect = canvas.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+
+        const gradient = ctx.createLinearGradient(0, 0, w, h);
+        gradient.addColorStop(0, "#14532d");
+        gradient.addColorStop(1, "#052e16");
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+
+        for (let i = 0; i < 700; i++) {
+          const x = Math.random() * w;
+          const y = Math.random() * h;
+          const alpha = Math.random() * 0.25;
+          ctx.fillStyle = "rgba(255,255,255," + alpha + ")";
+          ctx.fillRect(x, y, 1, 1);
+        }
+
+        ctx.font = "26px emoji, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const keyChar = "🔑";
+
+        const cols = 10;
+        const rows = 6;
+        const cellW = w / cols;
+        const cellH = h / rows;
+
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const x = col * cellW + cellW / 2;
+            const y = row * cellH + cellH / 2;
+            ctx.fillStyle = "rgba(250, 250, 210, 0.95)";
+            ctx.fillText(keyChar, x, y);
+          }
+        }
+      }
+
+      function getPointerPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        let clientX, clientY;
+
+        if (e.touches && e.touches.length) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        } else {
+          clientX = e.clientX;
+          clientY = e.clientY;
+        }
+
+        return {
+          x: clientX - rect.left,
+          y: clientY - rect.top,
+        };
+      }
+
+      function startScratch(e) {
+        e.preventDefault();
+        isDrawing = true;
+        canvas.style.cursor = "grabbing";
+        const pos = getPointerPos(e);
+        scratch(pos.x, pos.y);
+      }
+
+      function endScratch() {
+        isDrawing = false;
+        canvas.style.cursor = "grab";
+      }
+
+      function moveScratch(e) {
+        if (!isDrawing) return;
+        e.preventDefault();
+        const pos = getPointerPos(e);
+        scratch(pos.x, pos.y);
+      }
+
+      function scratch(x, y) {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.beginPath();
+        ctx.arc(x, y, brushRadius, 0, Math.PI * 2, false);
+        ctx.fill();
+
+        scratchSampleCount++;
+        if (scratchSampleCount % 4 === 0) {
+          checkScratchPercent();
+        }
+      }
+
+      function checkScratchPercent() {
+        if (claimActivated) return;
+
+        const width = canvas.width;
+        const height = canvas.height;
+
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const pixels = imageData.data;
+
+        let cleared = 0;
+        const totalPixels = pixels.length / 4;
+
+        for (let i = 3; i < pixels.length; i += 4) {
+          if (pixels[i] === 0) cleared++;
+        }
+
+        const percent = (cleared / totalPixels) * 100;
+
+        if (percent >= 50) {
+          claimActivated = true;
+          activateClaim();
+        }
+      }
+
+      function activateClaim() {
+        if (!keysFallen) {
+          keysFallen = true;
+          spawnFallingKeys();
+        }
+        claimButton.classList.add("active");
+      }
+
+      function spawnFallingKeys() {
+        const numKeys = 80;
+
+        for (let i = 0; i < numKeys; i++) {
+          const img = document.createElement("img");
+          img.src = "key.png";
+          img.className = "falling-key";
+
+          const delay = Math.random() * 2.2;
+          const duration = 2.2 + Math.random() * 2.8;
+          const startX = Math.random() * 100;
+          const startRot = Math.random() * 360 + "deg";
+          const endRot = (Math.random() * 720 - 360) + "deg";
+
+          img.style.left = startX + "vw";
+          img.style.animationDuration = duration + "s";
+          img.style.animationDelay = delay + "s";
+          img.style.setProperty("--start-rot", startRot);
+          img.style.setProperty("--end-rot", endRot);
+
+          document.body.appendChild(img);
+
+          img.addEventListener("animationend", () => img.remove());
+        }
+      }
+
+      // CLAIM BUTTON → SMS
+      claimButton.addEventListener("click", () => {
+        if (!claimActivated) return;
+        window.location.href = "sms:+15129372696";
+      });
+
+      // Events
+      canvas.addEventListener("mousedown", startScratch);
+      canvas.addEventListener("mousemove", moveScratch);
+      window.addEventListener("mouseup", endScratch);
+
+      canvas.addEventListener("touchstart", startScratch, { passive: false });
+      canvas.addEventListener("touchmove", moveScratch, { passive: false });
+      window.addEventListener("touchend", endScratch);
+
+      window.addEventListener("resize", resizeCanvas);
+      window.addEventListener("load", resizeCanvas);
+    })();
+  </script>
+</body>
+</html>
